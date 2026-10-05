@@ -1,28 +1,23 @@
-FROM debian:latest
+FROM debian:bookworm-slim
+
 WORKDIR /render
 
-ARG TAILSCALE_VERSION
-ENV TAILSCALE_VERSION=$TAILSCALE_VERSION
+ARG TAILSCALE_VERSION=1.96.4
+ENV TAILSCALE_VERSION=${TAILSCALE_VERSION}
 
-RUN apt-get -qq update \
-  && apt-get -qq install --upgrade -y --no-install-recommends \
-    apt-transport-https \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
     ca-certificates \
-    netcat-openbsd \
+    python3 \
     wget \
-    dnsutils \
-  > /dev/null \
-  && apt-get -qq clean \
-  && rm -rf \
-    /var/lib/apt/lists/* \
-    /tmp/* \
-    /var/tmp/* \
-  && :
+  && rm -rf /var/lib/apt/lists/*
 
-RUN echo "+search +short" > /root/.digrc
-COPY run-tailscale.sh /render/
+COPY install-tailscale.sh /tmp/install-tailscale.sh
+RUN chmod +x /tmp/install-tailscale.sh \
+  && /tmp/install-tailscale.sh \
+  && rm -f /tmp/install-tailscale.sh
 
-COPY install-tailscale.sh /tmp
-RUN /tmp/install-tailscale.sh && rm -r /tmp/*
+COPY run-tailscale.sh /render/run-tailscale.sh
+RUN chmod +x /render/run-tailscale.sh
 
-CMD ./run-tailscale.sh
+CMD ["/render/run-tailscale.sh"]
