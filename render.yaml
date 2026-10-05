@@ -1,17 +1,19 @@
 services:
-  - type: worker
+  - type: web
     name: render-subnet-router
-    env: docker
-    autoDeploy: false
+    runtime: docker
+    region: oregon
+    plan: 0.5c-512mb
+    autoDeployTrigger: "off"
+    healthCheckPath: /health
     envVars:
       - key: TAILSCALE_AUTHKEY
         sync: false
       - key: TAILSCALE_VERSION
-        value: 1.96.4
+        value: "1.96.4"
       - key: ADVERTISE_ROUTES
         value: 10.0.0.0/8
     disk:
       name: tailscale-state
       mountPath: /var/lib/tailscale
       sizeGB: 1
-
