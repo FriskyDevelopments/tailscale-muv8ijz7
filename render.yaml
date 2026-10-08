@@ -1,17 +1,99 @@
 services:
+  # ──────────────────────────────────────────────────────────────────────────
+  # tailscale-exit-node (srv-db1ig9favr4c73c3b110)
+  #
+  # CURRENT STATE (live, before PR merge):
+  #   runtime: image  (docker.io/tailscale/tailscale:stable, containerboot)
+  #   env vars in use: TS_AUTHKEY (missing!), TS_EXTRA_ARGS, TS_STATE_DIR,
+  #                    TS_HOSTNAME, TS_USERSPACE, TS_ACCEPT_DNS
+  #
+  # TARGET STATE (after Reastel switches source in Dashboard – see Steps for Reastel):
+  #   runtime: docker  (this repo's Dockerfile + run-tailscale.sh)
+  #   The switch is done in-place via Dashboard > Settings > Build & Deploy >
+  #   "Image/Repository" – no new service is created, the existing disk and
+  #   service ID are preserved.
+  #
+  # RUNTIME CHANGE NOTE:
+  #   Render's Blueprint `runtime` field is immutable for existing services;
+  #   `render blueprints apply` cannot flip image → docker in place.
+  #   Do NOT run `render blueprints apply` on the live service.
+  #   Use this file only as documentation / for creating brand-new services.
+  #
+  # ENV VAR MIGRATION (containerboot → run-tailscale.sh):
+  #   KEEP (rename not needed):
+  #     TS_AUTHKEY          → still TS_AUTHKEY (same name, must become REUSABLE)
+  #   KEEP (still valid):
+  #     TS_HOSTNAME         → still TS_HOSTNAME
+  #     TS_EXTRA_ARGS       → still TS_EXTRA_ARGS (appended to `tailscale up`)
+  #   BECOME UNUSED (safe to remove after switch, but harmless if left):
+  #     TS_STATE_DIR        → run-tailscale.sh uses /var/lib/tailscale hardcoded
+  #     TS_USERSPACE        → tailscaled always runs --tun=userspace-networking
+  #     TS_ACCEPT_DNS       → not consumed by run-tailscale.sh; pass via TS_EXTRA_ARGS if needed
+  #   NEW (add in Dashboard after switching source):
+  #     ADVERTISE_EXIT_NODE = true   (non-secret)
+  #     TS_UP_MAX_ATTEMPTS  = 5      (non-secret)
+  #     TS_UP_TIMEOUT       = 60     (non-secret)
+  #     TS_HEALTH_INTERVAL  = 30     (non-secret)
+  #     TS_HEALTH_FAIL_THRESHOLD = 3 (non-secret)
+  #   OPTIONAL – OAuth alternative to TS_AUTHKEY (both are secrets):
+  #     TS_OAUTH_CLIENT_SECRET  (set this instead of TS_AUTHKEY)
+  #     TS_TAGS                 (required with OAuth, e.g. tag:exit-node)
+  # ──────────────────────────────────────────────────────────────────────────
   - type: worker
-    name: render-subnet-router
+    name: tailscale-exit-node
     env: docker
-    autoDeploy: false
+    region: oregon
+    plan: starter
+    # autoDeploy only works for Git-backed services (runtime: docker).
+    # After source is switched to this repo it will trigger on every push to quality.
+    autoDeploy: true
     envVars:
-      - key: TAILSCALE_AUTHKEY
-        sync: false
+      # ── Auth (set ONE of the two blocks below) ────────────────────────────
+      # Option A: Reusable auth key (simplest)
+      #   MUST be reusable (not single-use) and non-ephemeral.
+      #   Create at https://login.tailscale.com/admin/settings/authkeys
+      - key: TS_AUTHKEY
+        sync: false          # secret – Reastel sets the value in Render dashboard
+
+      # Option B: Tagged OAuth client (never expires; recommended for automation)
+      #   Create at https://login.tailscale.com/admin/settings/oauth
+      #   Uncomment and remove / clear TS_AUTHKEY if using this option.
+      # - key: TS_OAUTH_CLIENT_SECRET
+      #   sync: false
+      # - key: TS_TAGS
+      #   value: tag:exit-node
+
+      # ── Service identity ─────────────────────────────────────────────────
+      - key: TS_HOSTNAME
+        value: render-exit-node
+
+      # ── Routing mode ─────────────────────────────────────────────────────
+      - key: ADVERTISE_EXIT_NODE
+        value: "true"
+      - key: ADVERTISE_ROUTES
+        value: 10.0.0.0/8    # used only when ADVERTISE_EXIT_NODE=false
+
+      # ── Extra flags forwarded to `tailscale up` ──────────────────────────
+      # Current live value: --advertise-exit-node (superseded by ADVERTISE_EXIT_NODE)
+      # Clear or leave blank after switching to this repo.
+      - key: TS_EXTRA_ARGS
+        value: ""
+
+      # ── Tailscale binary version ─────────────────────────────────────────
       - key: TAILSCALE_VERSION
         value: 1.96.4
-      - key: ADVERTISE_ROUTES
-        value: 10.0.0.0/8
+
+      # ── Resilience tuning ────────────────────────────────────────────────
+      - key: TS_UP_MAX_ATTEMPTS
+        value: "5"
+      - key: TS_UP_TIMEOUT
+        value: "60"
+      - key: TS_HEALTH_INTERVAL
+        value: "30"
+      - key: TS_HEALTH_FAIL_THRESHOLD
+        value: "3"
+
     disk:
       name: tailscale-state
       mountPath: /var/lib/tailscale
       sizeGB: 1
-
